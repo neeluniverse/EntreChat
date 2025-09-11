@@ -1,1 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Private Chat App</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
+</head>
+<body>
+    <div id="login-container" class="container">
+        <div class="login-form">
+            <h2>Join Private Chat</h2>
+            <input type="text" id="username-input" placeholder="Your username" maxlength="20">
+            <input type="password" id="passkey-input" placeholder="Enter passkey">
+            <button id="login-btn">Enter Chat</button>
+            <p id="login-error" class="error-message"></p>
+        </div>
+    </div>
 
+    <div id="chat-container" class="container hidden">
+        <div class="chat-header">
+            <h3>Private Chat Room</h3>
+            <span id="online-count">0 users online</span>
+        </div>
+        
+        <div id="messages-container">
+            <!-- Messages will be appended here -->
+        </div>
+        
+        <div class="input-area">
+            <input type="text" id="message-input" placeholder="Type your message..." maxlength="500">
+            <button id="send-btn">Send</button>
+        </div>
+        
+        <div class="help-text">
+            <p>Special commands: <span class="command">/idea</span>, <span class="command">/focus</span>, <span class="command">/timer</span></p>
+        </div>
+    </div>
+
+    <script>
+        // DOM elements
+        const loginContainer = document.getElementById('login-container');
+        const chatContainer = document.getElementById('chat-container');
+        const usernameInput = document.getElementById('username-input');
+        const passkeyInput = document.getElementById('passkey-input');
+        const loginBtn = document.getElementById('login-btn');
+        const loginError = document.getElementById('login-error');
+        const messagesContainer = document.getElementById('messages-container');
+        const messageInput = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+        const onlineCount = document.getElementById('online-count');
+
+        // SocketIO connection
+        const socket = io();
+
+        // Login functionality
+        loginBtn.addEventListener('click', () => {
+            const username = usernameInput.value.trim();
+            const passkey = passkeyInput.value.trim();
+            
+            if (!username) {
+                showLoginError('Please enter a username');
+                return;
+            }
+            
+            if (!passkey) {
+                showLoginError('Please enter the passkey');
+                return;
+            }
+            
+            socket.emit('login', { username, passkey });
+        });
+
+        // Send message functionality
+        sendBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+            
+            // Handle /timer command locally
+            if (message === '/timer') {
+                addMessage('You', 'Starting a 60-second timer...', new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
+                startTimer(60);
+                messageInput.value = '';
+                return;
+            }
+            
+            socket.emit('chat_message', { message });
+            messageInput.value = '';
+        }
+
+        function startTimer(seconds) {
+            let remaining = seconds;
+            const timerId = 'timer-' + Date.now();
+            
+            const timerElement = document.createElement('div');
+            timerElement.id = timerId;
+            timerElement.className = 'message system-message';
+            timerElement.innerHTML = `
+                <div class="message-content">
+                    <span class="username">Timer</span>
+                    <span class="message-text">${remaining} seconds remaining</span>
+                    <span class="timestamp">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                </div>
+            `;
+            messagesContainer.appendChild(timerElement);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            
+            const interval = setInterval(() => {
+                remaining--;
+                
+                if (remaining <= 0) {
+                    clearInterval(interval);
+                    document.getElementById(timerId).querySelector('.message-text').textContent = 'Timer finished!';
+                } else {
+                    document.getElementById(timerId).querySelector('.message-text').textContent = `${remaining} seconds remaining`;
+                }
+            }, 1000);
+        }
+
+        // Socket event handlers
+        socket.on('login_success', (data) => {
+            loginContainer.classList.add('hidden');
+            chatContainer.classList.remove('hidden');
+            addMessage(data.username, data.message, data.timestamp);
+            messageInput.focus();
+        });
+
+        socket.on('login_failed', (data) => {
+            showLoginError(data.message);
+        });
+
+        socket.on('new_message', (data) => {
+            addMessage(data.username, data.message, data.timestamp);
+        });
+
+        socket.on('command_response', (data) => {
+            addMessage(data.username, data.message, data.timestamp, true);
+        });
+
+        socket.on('user_joined', (data) => {
+            addMessage('System', `${data.username} joined the chat`, data.timestamp, true);
+        });
+
+        socket.on('user_left', (data) => {
+            addMessage('System', `${data.username} left the chat`, data.timestamp, true);
+        });
+
+        // Helper functions
+        function addMessage(username, message, timestamp, isSystem = false) {
+            const messageElement = document.createElement('div');
+            messageElement.className = `message ${isSystem ? 'system-message' : ''}`;
+            messageElement.innerHTML = `
+                <div class="message-content">
+                    <span class="username">${username}:</span>
+                    <span class="message-text">${message}</span>
+                    <span class="timestamp">${timestamp}</span>
+                </div>
+            `;
+            messagesContainer.appendChild(messageElement);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function showLoginError(message) {
+            loginError.textContent = message;
+            setTimeout(() => {
+                loginError.textContent = '';
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
